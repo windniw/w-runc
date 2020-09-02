@@ -2,8 +2,11 @@ package main
 
 import (
 	"fmt"
+	"io/ioutil"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strconv"
 	"syscall"
 )
 
@@ -30,7 +33,7 @@ func run() {
 	cmd.Stderr = os.Stderr
 
 	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Cloneflags: syscall.CLONE_NEWUTS | syscall.CLONE_NEWPID | syscall.CLONE_NEWNS,
+		Cloneflags:   syscall.CLONE_NEWUTS | syscall.CLONE_NEWPID | syscall.CLONE_NEWNS,
 		Unshareflags: syscall.CLONE_NEWNS,
 	}
 
@@ -40,6 +43,8 @@ func run() {
 
 func child() {
 	fmt.Printf("Running %v as %d \n", os.Args[2:], os.Getpid())
+
+	cgPids()
 
 	must(syscall.Sethostname([]byte("container")))
 	must(syscall.Chroot("rootfs"))
@@ -54,6 +59,18 @@ func child() {
 	cmd.Run()
 
 	must(syscall.Unmount("/proc", 0))
+}
+
+func cgPids() {
+	cgroups := "/sys/fs/cgroup"
+	pids := filepath.Join(cgroups, "pids")
+	err := os.Mkdir(filepath.Join(pids, "windniw"), 0755)
+	if err != nil && !os.IsExist(err) {
+		panic(err)
+	}
+	must(ioutil.WriteFile(filepath.Join(pids, "windniw/pids.max"), []byte("20"), 0700))
+	must(ioutil.WriteFile(filepath.Join(pids, "windniw/notify_on_release"), []byte("1"), 0700))
+	must(ioutil.WriteFile(filepath.Join(pids, "windniw/cgroup.procs"), []byte(strconv.Itoa(os.Getpid())), 0700))
 }
 
 func must(err error) {
